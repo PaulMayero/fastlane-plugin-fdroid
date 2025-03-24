@@ -13,7 +13,7 @@ lane :release do
     tag_name: "v#{release_version}",
     description: "v#{release_version}",
     commitish: git_branch,
-    upload_assets: ['pkg/fastlane-plugin-fdroid-#{release_version}.gem']
+    upload_assets: ["pkg/fastlane-plugin-fdroid-#{release_version}.gem"]
   )
 end
 

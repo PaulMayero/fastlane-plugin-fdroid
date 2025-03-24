@@ -9,7 +9,7 @@ Gem::Specification.new do |spec|
   spec.email         = 'fdroid@fdroid.com'
 
   spec.summary       = 'opens a PR for an app to be packaged on F-Droid'
-  # spec.homepage      = "https://github.com/<GITHUB_USERNAME>/fastlane-plugin-fdroid"
+  spec.homepage      = "https://github.com/PaulMayero/fastlane-plugin-fdroid"
   spec.license       = "MIT"
 
   spec.files         = Dir["lib/**/*"] + %w(README.md LICENSE)

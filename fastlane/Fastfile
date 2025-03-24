@@ -1,0 +1,19 @@
+lane :test do
+  fdroid
+end
+
+lane :release do
+  version_path = '../lib/fastlane/plugin/fdroid/version.rb'
+  release_version = File.read(version_path).scan(/\d+/).join('.')
+  sh('rake build')
+  set_github_release(
+    repository_name:'PaulMayero/fastlane-plugin-fdroid',
+    api_token: ENV['GITHUB_TOKEN'],
+    name: 'FDroid v#{release_version}',
+    tag_name: 'v#{release_version}',
+    description: 'v#{release_version}',
+    commitish: git_branch,
+    upload_assets: ['pkg/fastlane-plugin-fdroid-#{release_version}.gem']
+  )
+end
+

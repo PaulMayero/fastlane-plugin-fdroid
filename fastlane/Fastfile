@@ -9,9 +9,9 @@ lane :release do
   set_github_release(
     repository_name:'PaulMayero/fastlane-plugin-fdroid',
     api_token: ENV['GITHUB_TOKEN'],
-    name: 'FDroid v#{release_version}',
-    tag_name: 'v#{release_version}',
-    description: 'v#{release_version}',
+    name: "FDroid v#{release_version}",
+    tag_name: "v#{release_version}",
+    description: "v#{release_version}",
     commitish: git_branch,
     upload_assets: ['pkg/fastlane-plugin-fdroid-#{release_version}.gem']
   )

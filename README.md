@@ -12,7 +12,7 @@ fastlane add_plugin fdroid
 
 ## About fdroid
 
-opens a PR for an app to be packaged on F-Droid
+opens an [RFP](https://gitlab.com/fdroid/rfp) for an app to be packaged on [F-Droid](https://f-droid.org/en/)
 
 **Note to author:** Add a more detailed description about this plugin here. If your plugin contains multiple actions, make sure to mention them here.
 

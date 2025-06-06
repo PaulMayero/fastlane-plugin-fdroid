@@ -24,4 +24,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'pry'
   spec.add_dependency 'nokogiri', '~> 1.18'
   spec.add_dependency 'http-cookie', '~> 1.0'
+  spec.add_dependency 'octokit'
 end

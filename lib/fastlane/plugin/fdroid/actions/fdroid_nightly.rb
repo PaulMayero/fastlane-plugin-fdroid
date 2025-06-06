@@ -13,6 +13,14 @@ module Fastlane
 
         # Actions.lane_context[SharedValues::FDROID_NIGHTLY_CUSTOM_VALUE] = "my_val"
         path_to_android_project = params[:path_to_android_project]
+        github_access_token = params[:github_personal_access_token]
+        github_username = get_github_username(path_to_android_project)
+        debug_keystore_deploy_key_array = run_fdroid_nightly_command(path_to_android_project)
+        write_out_github_yml_for_fdroid_nightly(path_to_android_project)
+        github_repo_name = get_name_of_github_repo(path_to_android_project)
+        x = create_online_github_repo(github_username, github_access_token, github_repo_name)
+        print_out_next_steps_to_create_nightly(debug_keystore_deploy_key_array[0], debug_keystore_deploy_key_array[0], x[1])
+
 
 
 
@@ -47,7 +55,8 @@ module Fastlane
                                            UI.user_error!("No Path given. Please try again")
                                          end
                                          # UI.user_error!("Couldn't find file at path '#{value}'") unless File.exist?(value)
-                                       end),
+                                       end,
+                                       default_value: '.'),
           FastlaneCore::ConfigItem.new(key: :github_personal_access_token,
                                        env_name: 'GITHUB_PERSONAL_ACCESS_TOKEN',
                                        description: 'Developer Github personal access token to be used to create the Nightly Repo on Github',
@@ -80,18 +89,15 @@ module Fastlane
         true
       end
 
-      def self.get_online_git_service_in_use(path_to_android_project)
+      def self.get_github_username(path_to_android_project)
         #checks the git repo to show if github or gitlab is in use
         require 'open3'
         output, _error, status = Open3.capture3("git remote -v")
         if status.success?
           #continue execution
           if output.include?("github.com")
-            puts "This repo is a github repo"
+            return output.chomp.split(" ")[1].split("/")[0].split(":")[1]
             # runs function to process github repo
-          elsif output.include?("gitlab.com")
-            puts "this repo is a gitlab repo"
-            # runs function that processes gitlab repos
           else
             UI.Error "git service not known. Plese setup repo on gitlab or github"
             exit
@@ -108,7 +114,7 @@ module Fastlane
         require 'open3'
         debug_keystore, deploy_key, status = Open3.capture3("fdroid nightly --show-secret-var")
         if status.success?
-          return debug_keystore, deploy_key
+          return [debug_keystore, deploy_key]
         end
 
         if !status.success?
@@ -169,13 +175,43 @@ module Fastlane
         end
       end
 
-      def self.create_online_github_repo
+      def self.get_name_of_github_repo(path_to_android_project)
+        require 'open3'
+        git_remote, _error, status = Open3.capture3("git remote get-url origin")
+        if status.success?
+          name_of_repo = git_remote.chomp.gsub(".git","").split("/")[4]
+          return name_of_repo
+        else
+          UI.error "Error getting any Git repo. Please set it up to continue"
+          exit
+        end
       end
 
+      def self.create_online_github_repo(github_username, github_personal_access_token, name_of_repo)
+        require 'octokit'
 
+        client = Octokit::Client.new(access_token: github_personal_access_token)
+        repo_name = name_of_repo + "-nightly"
+        repo_description = "This will be the F-Droid nightly repo of #{name_of_repo}"
+        private_repo = false
 
+        begin
+          client.repository("#{github_username}/#{repo_name}")
+          UI.error "This Repo #{repo_name} already exists. Please change name and try again"
+          exit
+        rescue Octokit::NotFound
+          repo_info = client.create_repository(repo_name, description: repo_description, private: private_repo)
+          return repo_name, repo_info['html_url']
+        end
+      end
 
-
+      #TODO: write out contents namely debug and keystore
+      # and where they should be written in the repo
+      def self.print_out_next_steps_to_create_nightly(deploy_key, debug_keystore, link_to_nightly_repo )
+        UI.message("The deploy key is: #{deploy_key}")
+        UI.message("The debug keystore is: #{debug_keystore}")
+        UI.message("The newly created nightly repo is: #{link_to_nightly_repo}")
+      end
     end
   end
 end

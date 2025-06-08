@@ -6,6 +6,7 @@ gem 'bundler'
 gem 'fastlane', '>= 2.227.0'
 # Provides an interactive debugging environment for Ruby.
 gem 'pry'
+gem 'pry-byebug'
 # A simple task automation tool.
 gem 'rake'
 # Behavior-driven testing tool for Ruby.

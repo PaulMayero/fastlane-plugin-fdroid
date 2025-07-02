@@ -306,7 +306,9 @@ module Fastlane
 
         box = RbNaCl::Boxes::Sealed.from_public_key(public_key) # rubocop:disable Require/MissingRequireStatement
         debug_keystore = hash_of_debug_keystore_and_deploy_key[:debug_keystore].split("\n")[2]
-        encrypted_secret = Base64.strict_encode64(box.encrypt(debug_keystore))
+        UI.message("the debug keystore is #{debug_keystore}")
+        encrypted_secret = box.encrypt(debug_keystore)
+        UI.message("the encrypted debug keystore is #{encrypted_secret}")
 
         # create or update the secret
         begin

@@ -14,6 +14,7 @@ module Fastlane
         # Actions.lane_context[SharedValues::FDROID_NIGHTLY_CUSTOM_VALUE] = "my_val"
         path_to_android_project = params[:path_to_android_project]
         github_access_token = params[:github_personal_access_token]
+        path_to_keystore = params[:path_to_keystore]
         # require 'pry'
         # require 'pry-byebug'
         # binding.pry
@@ -22,7 +23,7 @@ module Fastlane
         github_username = get_github_username(path_to_android_project)
         github_repo_name = get_github_reponame(path_to_android_project)
 
-        hash_of_debug_keystore_and_deploy_key = run_fdroid_nightly_command
+        hash_of_debug_keystore_and_deploy_key = run_fdroid_nightly_command(path_to_keystore)
 
         path_to_fdroid_nightly_yml_file = write_out_github_yml_for_fdroid_nightly(path_to_android_project)
         add_and_commit_fdroid_nightly_yml(path_to_fdroid_nightly_yml_file)
@@ -72,15 +73,15 @@ module Fastlane
                                                        unless value && !value.empty?
                                                          UI.user_error("No Github Personal token found, pass using `github_personal_access_token: 'token'`")
                                                        end
+                                                     end),
+          FastlaneCore::ConfigItem.new(key: :path_to_keystore,
+                                       env_name: 'PATH_TO_KEYSTORE',
+                                       description: 'Path to Keystore to be used to generate F-Droid nightly DEBUG_KEYSTORE secret variable and SSH public key to be used as deploy key',
+                                       verify_block: proc do |value|
+                                                       unless value && !value.empty?
+                                                         UI.message("No Keystore found, using default Keystore`")
+                                                       end
                                                      end)
-        ]
-      end
-
-      def self.output
-        # Define the shared values you are going to provide
-        # Example
-        [
-          ['FDROID_NIGHTLY_CUSTOM_VALUE', 'A description of what this value contains']
         ]
       end
 
@@ -124,9 +125,14 @@ module Fastlane
         end
       end
 
-      def self.run_fdroid_nightly_command
+      def self.run_fdroid_nightly_command(path_to_keystore)
         require 'open3'
-        debug_keystore, deploy_key, status = Open3.capture3("fdroid nightly --show-secret-var")
+        if path_to_keystore.nil?
+          debug_keystore, deploy_key, status = Open3.capture3("fdroid nightly --show-secret-var")
+        end
+        unless path_to_keystore.nil?
+          debug_keystore, deploy_key, status = Open3.capture3("fdroid nightly --show-secret-var --keystore #{path_to_keystore}")
+        end
         if status.success?
           return {
             debug_keystore: debug_keystore, # debug.keystore encoded for the DEBUG_KEYSTORE secret variable
@@ -142,7 +148,9 @@ module Fastlane
 
       def self.write_out_github_yml_for_fdroid_nightly(path_to_android_project)
         if File.directory?(File.join(path_to_android_project, ".github/workflows/fdroid-nightly.yml"))
-          # pass for now
+          # pass for now prompt user to check if up to date
+          UI.message("You are already using the fdroid nightly workflow")
+          UI.message("Please compare it with the one at [F-Droid](https://f-droid.org/docs/Publishing_Nightly_Builds/) if it is up to date")
         else
           # create fdroid-nightly.yml
           require 'fileutils'
@@ -167,12 +175,14 @@ module Fastlane
                   - name: Checkout
                     uses: actions/checkout@v4
                   - name: Gradle Wrapper Validation
-                    uses: gradle/wrapper-validation-action@v3
+                    uses: gradle/actions/wrapper-validation@v3
                   - name: Set up JDK 17
                     uses: actions/setup-java@v2
                     with:
                       distribution: 'adopt'
                       java-version: 17
+                  - name: Make gradlew executable
+                    run: chmod +x ./gradlew
                   - name: Build
                     run: |
                       # use timestamp as Version Code
@@ -206,7 +216,7 @@ module Fastlane
             exit
           end
         else
-          UI.error("Something wrong happened, try to add #{path_to_yaml_file} manually")
+          UI.error("No change discovered in  #{path_to_yaml_file}.")
           exit
         end
       end
@@ -277,8 +287,9 @@ module Fastlane
           UI.message("Deploy key has been added to #{repo_name_and_link}")
         rescue Octokit::UnprocessableEntity => e
           if e.message.include?("key is already in use")
-            UI.error("This deploy key is already in use")
-            exit
+            UI.error("This deploy key is already in use in one of your repositories")
+            UI.message("Please generate a new keystore with the command ``")
+            nil # pass and continue with setup
           else
             UI.error("Error #{e.message}")
           end
@@ -298,17 +309,17 @@ module Fastlane
         begin
           github_key = client.get_actions_public_key(repo_full_name)
           key_id = github_key[:key_id]
-          public_key = RbNaCl::PublicKey.new(Base64.decode64(github_key[:key])) # rubocop:disable Require/MissingRequireStatement
+          public_key = RbNaCl::PublicKey.new(Base64.decode64(github_key[:key]))
         rescue Exception => e # rubocop:disable Lint/RescueException
           UI.error("Error: #{e.message}")
           exit
         end
 
-        box = RbNaCl::Boxes::Sealed.from_public_key(public_key) # rubocop:disable Require/MissingRequireStatement
+        box = RbNaCl::Boxes::Sealed.from_public_key(public_key)
         debug_keystore = hash_of_debug_keystore_and_deploy_key[:debug_keystore].split("\n")[2]
         UI.message("the debug keystore is #{debug_keystore}")
-        encrypted_secret = box.encrypt(debug_keystore)
-        UI.message("the encrypted debug keystore is #{encrypted_secret}")
+        encrypted_secret = Base64.strict_encode64(box.encrypt(debug_keystore))
+        # UI.message("the encrypted debug keystore is #{encrypted_secret}")
 
         # create or update the secret
         begin

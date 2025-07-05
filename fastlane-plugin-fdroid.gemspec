@@ -28,4 +28,10 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'octokit'
   spec.add_dependency 'rugged'
   spec.add_dependency 'rbnacl'
+  spec.post_install_message = <<~MSG
+  NOTE: Rugged may require native extensions.
+  If you're using SSH support, install it with:
+
+    gem install rugged -- --with-ssh
+  MSG
 end

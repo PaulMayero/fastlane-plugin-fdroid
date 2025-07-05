@@ -26,12 +26,11 @@ module Fastlane
         hash_of_debug_keystore_and_deploy_key = run_fdroid_nightly_command(path_to_keystore)
 
         path_to_fdroid_nightly_yml_file = write_out_github_yml_for_fdroid_nightly(path_to_android_project)
-        add_and_commit_fdroid_nightly_yml(path_to_fdroid_nightly_yml_file)
+        add_and_commit_fdroid_nightly_yml(path_to_fdroid_nightly_yml_file, path_to_android_project)
 
         hash_of_repo_name_and_link_to_nightly = create_online_github_repo(github_username, github_access_token, github_repo_name)
-        add_deploy_key_to_nightly_repo(github_access_token, hash_of_debug_keystore_and_deploy_key, hash_of_repo_name_and_link_to_nightly, github_username)
         add_debug_keystore_as_secret_to_repo(github_username, github_access_token, github_repo_name, hash_of_debug_keystore_and_deploy_key)
-        # add_and_commit_fdroid_nightly_yml(path_to_fdroid_nightly_yml_file)
+        add_deploy_key_to_nightly_repo(github_access_token, hash_of_debug_keystore_and_deploy_key, hash_of_repo_name_and_link_to_nightly, github_username)
         print_out_next_steps_to_create_nightly(hash_of_debug_keystore_and_deploy_key, hash_of_repo_name_and_link_to_nightly)
       end
 
@@ -79,7 +78,7 @@ module Fastlane
                                        description: 'Path to Keystore to be used to generate F-Droid nightly DEBUG_KEYSTORE secret variable and SSH public key to be used as deploy key',
                                        verify_block: proc do |value|
                                                        unless value && !value.empty?
-                                                         UI.message("No Keystore found, using default Keystore`")
+                                                         UI.message("No Keystore provided, using default Keystore that comes with F-Droidserver")
                                                        end
                                                      end)
         ]
@@ -127,12 +126,16 @@ module Fastlane
 
       def self.run_fdroid_nightly_command(path_to_keystore)
         require 'open3'
-        if path_to_keystore.nil?
-          debug_keystore, deploy_key, status = Open3.capture3("fdroid nightly --show-secret-var")
+        UI.message(path_to_keystore.to_s)
+        if path_to_keystore.empty?
+          UI.error("Create Custom Keystore to proceed")
+          exit
         end
-        unless path_to_keystore.nil?
+
+        unless path_to_keystore.empty?
           debug_keystore, deploy_key, status = Open3.capture3("fdroid nightly --show-secret-var --keystore #{path_to_keystore}")
         end
+
         if status.success?
           return {
             debug_keystore: debug_keystore, # debug.keystore encoded for the DEBUG_KEYSTORE secret variable
@@ -141,23 +144,18 @@ module Fastlane
         end
 
         unless status.success?
-          UI.error("fdroidserver not installed on host machine. Visit https://f-droid.org/en/docs/Installing_the_Server_and_Repo_Tools/ to sort this error")
+          UI.error(deploy_key.to_s)
           exit
         end
       end
 
       def self.write_out_github_yml_for_fdroid_nightly(path_to_android_project)
-        if File.directory?(File.join(path_to_android_project, ".github/workflows/fdroid-nightly.yml"))
-          # pass for now prompt user to check if up to date
-          UI.message("You are already using the fdroid nightly workflow")
-          UI.message("Please compare it with the one at [F-Droid](https://f-droid.org/docs/Publishing_Nightly_Builds/) if it is up to date")
-        else
-          # create fdroid-nightly.yml
-          require 'fileutils'
-          full_path_to_github_yml_file = File.join(path_to_android_project, ".github/workflows/")
-          FileUtils.mkdir_p(full_path_to_github_yml_file)
-          github_yml = File.join(full_path_to_github_yml_file, 'fdroid-nightly.yml')
-          fdroid_nightly_workflow_yaml = <<~YAML
+        # create fdroid-nightly.yml
+        require 'fileutils'
+        full_path_to_github_yml_file = File.join(path_to_android_project, ".github/workflows/")
+        FileUtils.mkdir_p(full_path_to_github_yml_file)
+        github_yml = File.join(full_path_to_github_yml_file, 'fdroid-nightly.yml')
+        fdroid_nightly_workflow_yaml = <<~YAML
             ---
             name: Publish nightly build
 
@@ -196,28 +194,62 @@ module Fastlane
                       sudo apt-get install apksigner fdroidserver --no-install-recommends
                       export DEBUG_KEYSTORE=${{ secrets.DEBUG_KEYSTORE }}
                       fdroid nightly --archive-older 10
-          YAML
-          File.write(github_yml, fdroid_nightly_workflow_yaml, encoding: "UTF-8")
-          UI.message("F-Droid Nightly workflow is published at #{github_yml}")
-          return github_yml
-        end
+        YAML
+        File.write(github_yml, fdroid_nightly_workflow_yaml, encoding: "UTF-8")
+        UI.message("F-Droid Nightly workflow is published at #{github_yml}")
+        return github_yml
       end
 
-      def self.add_and_commit_fdroid_nightly_yml(path_to_yaml_file)
-        require "open3"
-        _output, _error, status = Open3.capture3("git add #{path_to_yaml_file} && git commit -m 'add fdroid-nightly.yml'")
-        if status.success?
-          UI.message("Added #{path_to_yaml_file} to git tree and success on commit")
-          _output, _error, status = Open3.capture3("git push -f origin")
-          if status.success?
-            UI.message("pushed changes to online repo")
-          else
-            UI.error("Could not push changes to online repo")
-            exit
-          end
-        else
-          UI.error("No change discovered in  #{path_to_yaml_file}.")
+      def self.add_and_commit_fdroid_nightly_yml(path_to_yaml_file, path_to_android_project)
+        require 'rugged'
+        begin
+          repo = Rugged::Repository.discover(path_to_android_project)
+        rescue StandardError => e
+          UI.error(e.to_s)
+          UI.message("Rectify above error to continue")
           exit
+        else
+          # force add and commit file even if no changes
+          index = repo.index
+          # Add the file explicitly (force)
+          file_path = path_to_yaml_file.split(File::SEPARATOR).reject(&:empty?).last(3).join(File::SEPARATOR)
+          UI.message("file_path is #{file_path}")
+          index.add(path: file_path, oid: Rugged::Blob.from_workdir(repo, file_path), mode: 0100644)
+          # Write the index to a new tree
+          tree_oid = index.write_tree(repo)
+
+          # Set up commit author/committer
+          author = {
+            email: repo.config['user.email'] || "No email set",
+            name:  repo.config['user.name']  || "No name set",
+            time: Time.now
+          }
+
+          # Get parent commit if it exists
+          parents = repo.empty? ? [] : [repo.head.target]
+
+          # Create the commit
+          Rugged::Commit.create(repo,
+                                message: "Add fdroid-nightly.yml",
+                                author: author,
+                                committer: author,
+                                tree: tree_oid,
+                                parents: parents,
+                                update_ref: 'HEAD')
+
+          UI.message("Already added and commited fdroid-nightly.yml to your repo")
+          # push to upstream using ssh
+          remote = repo.remotes['origin']
+          UI.message("Remote url is #{remote.url}")
+          credentials = Rugged::Credentials::SshKey.new(
+            username: 'git',
+            privatekey: File.expand_path('~/.ssh/id_rsa'),
+            passphrase: 'mayero'
+          )
+          UI.message("Pushing your changes to the online repo")
+          repo.push('origin', ['refs/heads/main'], credentials: credentials)
+        ensure
+          repo&.close
         end
       end
 
@@ -239,6 +271,8 @@ module Fastlane
       end
 
       def self.create_online_github_repo(github_username, github_personal_access_token, name_of_repo)
+        # deletes nightly repo on Github if exists
+        # Recreates repo for re-deployment
         require 'octokit'
 
         client = Octokit::Client.new(access_token: github_personal_access_token)
@@ -247,16 +281,17 @@ module Fastlane
         private_repo = false
 
         begin
-          client.repository("#{github_username}/#{repo_name}")
-          UI.error("This Repo #{repo_name} already exists. Please change name and try again")
-          exit
+          client.delete_repository("#{github_username}/#{repo_name}")
+          UI.message("Deleted existing repository: #{repo_name}")
         rescue Octokit::NotFound
-          repo_info = client.create_repository(repo_name, description: repo_description, private: private_repo)
-          return {
-            name_of_repository: repo_name,
-            link_to_newly_created_nightly_repo: repo_info['html_url']
-        }
+          UI.message("No existing repository found. Creating: #{repo_name}")
         end
+
+        repo_info = client.create_repository(repo_name, description: repo_description, private: private_repo)
+        return {
+          name_of_repository: repo_name,
+          link_to_newly_created_nightly_repo: repo_info['html_url']
+        }
       end
 
       def self.add_deploy_key_to_nightly_repo(github_access_token, hash_of_deploy_and_debug_keys, hash_of_repo_name_and_link_to_nightly, github_username)
@@ -288,13 +323,16 @@ module Fastlane
         rescue Octokit::UnprocessableEntity => e
           if e.message.include?("key is already in use")
             UI.error("This deploy key is already in use in one of your repositories")
-            UI.message("Please generate a new keystore with the command ``")
-            nil # pass and continue with setup
+            UI.message("Generate a new keystore with the command `keytool -genkeypair -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -keystore sample.jks -validity 100000 -noprompt`")
+            UI.message("Then pass sample.jks as your keystore to continue")
+            UI.message("Then pass the complete path to sample.jks as your keystore to continue")
+            exit
           else
             UI.error("Error #{e.message}")
+            exit
           end
         rescue Octokit::Error => e
-          UI.error("Github  APi Error #{e.message}")
+          UI.error("Github  API Error #{e.message}")
           exit
         end
       end
@@ -317,9 +355,7 @@ module Fastlane
 
         box = RbNaCl::Boxes::Sealed.from_public_key(public_key)
         debug_keystore = hash_of_debug_keystore_and_deploy_key[:debug_keystore].split("\n")[2]
-        UI.message("the debug keystore is #{debug_keystore}")
         encrypted_secret = Base64.strict_encode64(box.encrypt(debug_keystore))
-        # UI.message("the encrypted debug keystore is #{encrypted_secret}")
 
         # create or update the secret
         begin
@@ -342,12 +378,13 @@ module Fastlane
       # TODO: write out contents namely debug and keystore
       # and where they should be written in the repo
       def self.print_out_next_steps_to_create_nightly(hash_of_deploy_and_debug_keys, hash_of_repo_name_and_link_to_nightly)
-        deploy_key = hash_of_deploy_and_debug_keys[:deploy_key]
-        debug_keystore = hash_of_deploy_and_debug_keys[:debug_keystore]
+        # deploy_key = hash_of_deploy_and_debug_keys[:deploy_key]
+        # debug_keystore = hash_of_deploy_and_debug_keys[:debug_keystore]
         link_to_nightly_repo = hash_of_repo_name_and_link_to_nightly[:link_to_newly_created_nightly_repo]
-        UI.message("encoded for the DEBUG_KEYSTORE secret variable: #{debug_keystore}")
-        UI.message("SSH public key to be used as deploy key: #{deploy_key}")
+        # UI.message("encoded for the DEBUG_KEYSTORE secret variable: #{debug_keystore}")
+        # UI.message("SSH public key to be used as deploy key: #{deploy_key}")
         UI.message("The newly created nightly repo for your app: #{link_to_nightly_repo}")
+        UI.message("Check status of your nightly job at: #{link_to_nightly_repo.sub('-nightly', '/actions')}")
       end
     end
   end

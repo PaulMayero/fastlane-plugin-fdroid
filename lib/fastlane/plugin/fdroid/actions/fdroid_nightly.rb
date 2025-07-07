@@ -78,9 +78,18 @@ module Fastlane
                                        description: 'Path to Keystore to be used to generate F-Droid nightly DEBUG_KEYSTORE secret variable and SSH public key to be used as deploy key',
                                        verify_block: proc do |value|
                                                        unless value && !value.empty?
-                                                         UI.message("No Keystore provided, using default Keystore that comes with F-Droidserver")
+                                                         UI.message("No Keystore provided, you have to provide the keystore")
                                                        end
-                                                     end)
+                                                     end),
+          FastlaneCore::ConfigItem.new(key: :password_used_for_github_ssh_key,
+                                       env_name: 'GITHUB_PASSWORD',
+                                       description: 'Github Password for the SSH key used',
+                                       verify_block: proc do |value|
+                                                       unless value && !value.empty?
+                                                         UI.message("")
+                                                       end
+                                                     end,
+                                       default_value: 'nil')
         ]
       end
 
@@ -244,10 +253,11 @@ module Fastlane
           credentials = Rugged::Credentials::SshKey.new(
             username: 'git',
             privatekey: File.expand_path('~/.ssh/id_rsa'),
-            passphrase: 'mayero'
+            passphrase: ENV.fetch('GITHUB_PASSWORD', nil)
           )
           UI.message("Pushing your changes to the online repo")
-          repo.push('origin', ['refs/heads/main'], credentials: credentials)
+          # repo.push('origin', ['refs/heads/main'], credentials: credentials)
+          repo.push('origin', [repo.head.name], credentials: credentials)
         ensure
           repo&.close
         end

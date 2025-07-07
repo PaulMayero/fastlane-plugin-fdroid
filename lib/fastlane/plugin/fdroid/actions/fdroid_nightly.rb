@@ -385,14 +385,8 @@ module Fastlane
         end
       end
 
-      # TODO: write out contents namely debug and keystore
-      # and where they should be written in the repo
       def self.print_out_next_steps_to_create_nightly(hash_of_deploy_and_debug_keys, hash_of_repo_name_and_link_to_nightly)
-        # deploy_key = hash_of_deploy_and_debug_keys[:deploy_key]
-        # debug_keystore = hash_of_deploy_and_debug_keys[:debug_keystore]
         link_to_nightly_repo = hash_of_repo_name_and_link_to_nightly[:link_to_newly_created_nightly_repo]
-        # UI.message("encoded for the DEBUG_KEYSTORE secret variable: #{debug_keystore}")
-        # UI.message("SSH public key to be used as deploy key: #{deploy_key}")
         UI.message("The newly created nightly repo for your app: #{link_to_nightly_repo}")
         UI.message("Check status of your nightly job at: #{link_to_nightly_repo.sub('-nightly', '/actions')}")
       end

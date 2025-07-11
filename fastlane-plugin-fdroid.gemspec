@@ -20,7 +20,7 @@ Gem::Specification.new do |spec|
   # Don't add a dependency to fastlane or fastlane_re
   # since this would cause a circular dependency
 
-  spec.add_dependency 'gitlab', '~> 3.6'
+  spec.add_dependency 'gitlab', '~> 5.0'
   spec.add_dependency 'pry'
   spec.add_dependency 'pry-byebug'
   spec.add_dependency 'nokogiri', '~> 1.18'

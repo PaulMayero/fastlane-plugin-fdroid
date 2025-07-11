@@ -45,7 +45,7 @@ module Fastlane
       def self.details
         # Optional:
         # this is your chance to provide a more detailed description of this action
-        'You can use this action to do cool things...'
+        'You can use this action to set up a F-Droid Repo on Gitlab.It executed once on your master or main branch.'
       end
 
       def self.available_options

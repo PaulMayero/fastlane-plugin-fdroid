@@ -165,6 +165,7 @@ module Fastlane
         gitlab_ci_yml = File.join(path_to_android_project, '.gitlab-ci.yml')
         if File.exist?(gitlab_ci_yml)
           UI.message(".gitlab-ci.yml file has been found in the project")
+          UI.message("is is at #{gitlab_ci_yml}")
           yaml_content = YAML.load_file(gitlab_ci_yml)
           hash_str_of_deploy_nightly = YAML.safe_load(self.yaml_string_for_fdroid_nightly)
           if yaml_content.key?("deploy_nightly")
@@ -172,16 +173,18 @@ module Fastlane
             yaml_content["deploy_nightly"] = hash_str_of_deploy_nightly["deploy_nightly"]
             # write out the content back to the file
             File.write(gitlab_ci_yml, yaml_content.to_yaml, encoding: "UTF-8")
+            gitlab_ci_yml
           else
             # add yaml content fto file
             yaml_content["deploy_nightly"] = hash_str_of_deploy_nightly["deploy_nightly"]
             File.write(gitlab_ci_yml, yaml_content.to_yaml, encoding: "UTF-8")
+            gitlab_ci_yml
           end
         else
           UI.message("No .gitlab-ci yml found in this project. Creating one for you")
           File.write(gitlab_ci_yml, self.yaml_string_for_fdroid_nightly, encoding: "UTF-8")
           UI.message("F-Droid Nightly job is written at #{gitlab_ci_yml}")
-          return gitlab_ci_yml
+          gitlab_ci_yml
         end
       end
 
@@ -214,6 +217,7 @@ module Fastlane
 
       def self.add_and_commit_fdroid_nightly_yml(path_to_yaml_file, path_to_android_project)
         require 'rugged'
+        UI.message("gitlab.yml file is at #{path_to_yaml_file}")
         begin
           repo = Rugged::Repository.discover(path_to_android_project)
         rescue StandardError => e
@@ -224,7 +228,9 @@ module Fastlane
           # force add and commit file even if no changes
           index = repo.index
           # Add the file explicitly (force)
-          file_path = path_to_yaml_file.split(File::SEPARATOR).reject(&:empty?).last(3).join(File::SEPARATOR)
+          UI.message("path is #{path_to_yaml_file}")
+          file_path = path_to_yaml_file.split(File::SEPARATOR).reject(&:empty?).last(1).join(File::SEPARATOR)
+          # file_path = path_to_yaml_file
           UI.message("file_path is #{file_path}")
           index.add(path: file_path, oid: Rugged::Blob.from_workdir(repo, file_path), mode: 0100644)
           # Write the index to a new tree
@@ -256,11 +262,12 @@ module Fastlane
           credentials = Rugged::Credentials::SshKey.new(
             username: 'git',
             privatekey: File.expand_path('~/.ssh/id_rsa'),
-            passphrase: ENV.fetch('GITLAB_PASSWORD', nil)
+            passphrase: ENV.fetch('SSH_PASSWORD', nil)
           )
           UI.message("Pushing your changes to the online repo")
           # repo.push('origin', ['refs/heads/main'], credentials: credentials)
           repo.push('origin', [repo.head.name], credentials: credentials)
+          UI.message("success in pushing to remote")
         ensure
           repo&.close
         end
@@ -288,41 +295,57 @@ module Fastlane
         # Recreates repo for re-deployment
         require 'gitlab'
 
-        # Configure the client
-        client = Gitlab.client(endpoint: 'https://gitlab.com/api/v4', private_token: gitlab_access_token)
+        gitlab = Gitlab.client(endpoint: "https://gitlab.com/api/v4", private_token: gitlab_access_token)
+
+        UI.message("the user is #{gitlab.user.username}")
 
         repo_name = "#{name_of_repo}-nightly"
         repo_description = "This will be the F-Droid nightly repo of #{name_of_repo}"
-        private_repo = false
+        # private_repo = false
 
         # Get your own namespace ID
-        user = Gitlab.user
-        namespace_id = Gitlab.namespaces(search: user.username).first&.id
+        user = gitlab.user
+        UI.message("user is #{user.username}")
+        namespace_id = gitlab.namespaces(search: user.username).first&.id
+        UI.message("namespace id is #{namespace_id}")
 
         # GitLab uses project path with namespace (username/repo_name format)
         project_path = "#{gitlab_username}/#{repo_name}"
 
         begin
-          # Try to find the project first
-          project = client.project(project_path)
-          # If found, delete it
-          client.delete_project(project.id)
-          UI.message("Deleted existing repository: #{repo_name}")
-        rescue Gitlab::Error::NotFound
-          UI.message("No existing repository found. Creating: #{repo_name}")
+          new_project = gitlab.create_project(repo_name, description: repo_description, visibility: "public", namespace: gitlab_username)
+        rescue Gitlab::Error::BadRequest => e
+          if e.message.include?("'name' has already been taken, 'path' has already been taken, 'project_namespace.name' has already been taken")
+            # search if project is active
+            begin
+              active_project = gitlab.project(project_path)
+            rescue Gitlab::Error::NotFound
+              # not found among active repos
+              # search among deleted projects
+              UI.message("#{active_project.name} not found")
+              new_project = gitlab.create_project(repo_name, description: repo_description, visibility: "public", namespace: gitlab_username)
+            else
+              # project is found, here edit then delete
+              edited_project = gitlab.edit_project(
+                active_project.id,
+                name: "#{active_project.name}-for-deletion",
+                description: "project slated for deletion"
+              )
+              gitlab.delete_project(edited_project.id)
+              UI.message("deleted #{edited_project.name}")
+              new_project = gitlab.create_project(repo_name, description: repo_description, visibility: "public", namespace: gitlab_username)
+            end
+          else
+            UI.error(e.message.to_s)
+            exit
+          end
+        else
+          UI.message("success in creating #{new_project.name}")
         end
 
-        # Create new repository (called "project" in GitLab terminology)
-        repo_info = client.create_project(
-          repo_name,
-          description: repo_description,
-          visibility: private_repo ? 'private' : 'public',
-          namespace_id: namespace_id
-        )
-
         return {
-          name_of_repository: repo_name,
-          link_to_newly_created_nightly_repo: repo_info.web_url
+          name_of_repository: new_project.name,
+          link_to_newly_created_nightly_repo: new_project.web_url
         }
       end
 
@@ -350,13 +373,16 @@ module Fastlane
 
           UI.message("Deploy key has been added to #{repo_name_and_link}")
         rescue Gitlab::Error::Error => e
-          if e.message.include?("key is already in use")
-            UI.error("This deploy key is already in use in one of your repositories")
-            UI.message("Generate a new keystore with the command `keytool -genkeypair -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -keystore sample.jks -validity 100000 -noprompt`")
-            UI.message("Then pass sample.jks as your keystore to continue")
-            UI.message("Then pass the complete path to sample.jks as your keystore to continue")
+          if e.message.include?("'deploy_key.fingerprint_sha256' has already been taken")
+            UI.error("This deploy key is already in use in at #{repo_name_and_link}")
+            UI.error("Generate a new keystore with the command")
+            UI.error('keytool -genkeypair -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -keystore insert-name-here.jks -validity 100000 -noprompt')
+            UI.error("Then pass insert-name-here.jks as your keystore to continue")
+            UI.error("The add it to as a variable in the .env file with its complete path")
+            UI.error("Run the action again")
             exit
           else
+            UI.message("Unknown deploy key error")
             UI.error("Error #{e.message}")
             exit
           end
@@ -377,24 +403,39 @@ module Fastlane
         }
 
         begin
-          client.create_variable(repo_full_name, key: 'DEBUG_KEYSTORE', value: debug_keystore, **options)
+          client.create_variable(
+            repo_full_name,
+            'DEBUG_KEYSTORE',
+            debug_keystore,
+            **options
+          )
         rescue Gitlab::Error::Error => e
-          if e.message.include?("has already been taken")
-            UI.error("Repo contains Key already")
-            UI.message("Updating the key")
-            client.update_variable(repo_full_name, key: 'DEBUG_KEYSTORE', value: debug_keystore, **options)
-          else
-            UI.error("Gitlab Error #{e.message}")
-          end
+          self.update_variable_if_already_found(e, client, repo_full_name, debug_keystore, **options)
         else
           UI.message("Successfully added variable: DEBUG_KEYSTORE to #{repo_full_name}")
         end
       end
 
+      def self.update_variable_if_already_found(e, client, repo_full_name, debug_keystore, options)
+        if e.message.include?("'key' (DEBUG_KEYSTORE) has already been taken")
+          begin
+            client.update_variable(repo_full_name, 'DEBUG_KEYSTORE', debug_keystore, **options)
+          rescue StandardError => e
+            self.check_if_error_during_update(e)
+          end
+        end
+      end
+
+      def check_if_error_during_update(err)
+        UI.error("Got this error when creating variable:DEBUG_KEYSTORE")
+        UI.error(err.to_s)
+        exit
+      end
+
       def self.print_out_next_steps_to_create_nightly(hash_of_deploy_and_debug_keys, hash_of_repo_name_and_link_to_nightly)
         link_to_nightly_repo = hash_of_repo_name_and_link_to_nightly[:link_to_newly_created_nightly_repo]
         UI.message("The newly created nightly repo for your app: #{link_to_nightly_repo}")
-        # UI.message("Check status of your nightly job at: #{link_to_nightly_repo.sub('-nightly', '/actions')}")
+        UI.message("Check status of your nightly job at: #{link_to_nightly_repo.sub('-nightly', '/-/jobs')}")
       end
     end
   end

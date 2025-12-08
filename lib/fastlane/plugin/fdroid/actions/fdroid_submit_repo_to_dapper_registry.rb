@@ -44,7 +44,7 @@ module Fastlane
                                        # The name of the environment variable
                                        env_name: 'PATH_TO_FDROID_REPO_CONFIG_YML',
                                        # a short description of this parameter
-                                       description: 'Complete file path to the config.yml',
+                                       description: 'Complete file path to the config.yml. Including the config.yml file',
                                        verify_block: proc do |value|
                                          unless value && !value.empty?
                                           UI.user_error!("Couldn't find file at path '#{value}'") unless File.exist?(value)

@@ -12,7 +12,12 @@ fastlane add_plugin fdroid
 
 ## About fdroid
 
-opens an [RFP](https://gitlab.com/fdroid/rfp) for an app to be packaged on [F-Droid](https://f-droid.org/en/)
+This plugin has a couple of actions that do very specific tasks. They are described below.
+
+- `fdroid_request_app_for_packaging` - opens an [RFP](https://gitlab.com/fdroid/rfp) for an app to be packaged on [F-Droid](https://f-droid.org/en/)
+- `fdroid_submit_repo_to_dapper_registry` - Submits the repo_url of a F-Droid repository to [Appiverse](https://appiverse.io) to be publically used by [Murena](https://murena.com/)
+- `fdroid_set_up_nightly_repo_on_github` - Sets up a nightly F-Droid repository on [Github](https://github.com/)
+- `fdroid_set_up_nightly_repo_on_gitlab` - Sets up a nightly F-Droid repository on [Gitlab](https://gitlab.com/)
 
 **Note to author:** Add a more detailed description about this plugin here. If your plugin contains multiple actions, make sure to mention them here.
 

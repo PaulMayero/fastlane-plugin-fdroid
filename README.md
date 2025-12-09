@@ -19,7 +19,9 @@ This plugin has a couple of actions that do very specific tasks. They are descri
 - `fdroid_set_up_nightly_repo_on_github` - Sets up a nightly F-Droid repository on [Github](https://github.com/)
 - `fdroid_set_up_nightly_repo_on_gitlab` - Sets up a nightly F-Droid repository on [Gitlab](https://gitlab.com/)
 
-**Note to author:** Add a more detailed description about this plugin here. If your plugin contains multiple actions, make sure to mention them here.
+## Documentation
+
+The documentation of the project is on Gitlab. It can be found at [Fdroid Fastlane Plugin Documentation](https://gitlab.com/fdroid/wiki/-/wikis/Fdroid-Fastlane-Plugin)
 
 ## Example
 
